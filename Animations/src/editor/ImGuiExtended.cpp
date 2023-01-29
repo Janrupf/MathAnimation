@@ -580,7 +580,7 @@ namespace MathAnim
 
 			constexpr size_t percentCompleteTextBufferSize = 24;
 			static char percentCompleteText[percentCompleteTextBufferSize];
-			sprintf_s(percentCompleteText, percentCompleteTextBufferSize, "%2.2f%%", value * 100.0f);
+			snprintf(percentCompleteText, percentCompleteTextBufferSize, "%2.2f%%", value * 100.0f);
 			ImVec2 strSize = ImGui::CalcTextSize(percentCompleteText);
 			if (strSize.x < size.x)
 			{

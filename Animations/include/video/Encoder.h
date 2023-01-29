@@ -1,6 +1,7 @@
 #ifndef MATH_ANIM_VIDEO_WRITER_H
 #define MATH_ANIM_VIDEO_WRITER_H
 #include "core.h"
+#include <atomic>
 
 extern "C" {
 	struct AV1Context;
