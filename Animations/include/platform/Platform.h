@@ -35,8 +35,6 @@ namespace MathAnim
 
 		bool deleteFile(const char* filename);
 
-		std::string tmpFilename(const std::string& directory);
-
 		std::string getSpecialAppDir();
 
 		MemMappedFile* createTmpMemMappedFile(const std::string& directory, size_t fileSize);
