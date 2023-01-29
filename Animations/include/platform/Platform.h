@@ -21,6 +21,8 @@ namespace MathAnim
 
 		bool isProgramInstalled(const char* displayName);
 
+		// TODO: This should not exist at all, but rather be replaced with a function
+		//		 which retrieves the path to the executable being searched.
 		bool getProgramInstallDir(const char* programDisplayName, char* buffer, size_t bufferLength);
 
 		bool executeProgram(const char* programFilepath, const char* cmdLineArgs = nullptr, const char* workingDirectory = nullptr, const char* executionOutputFilename = nullptr);

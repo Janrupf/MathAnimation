@@ -13,6 +13,7 @@ extern "C" {
 #include <unistd.h>
 #include <pwd.h>
 #include <fcntl.h>
+#include <spawn.h>
 
 #include <openssl/evp.h>
 }
@@ -85,6 +86,31 @@ static int mkdir_p(const char *path, mode_t mode) {
 }
 
 namespace MathAnim {
+	std::optional<std::string> findExecutable(const std::string& name) {
+		auto path = std::string(getenv("PATH"));
+
+		std::string::size_type currentSearchPos = 0;
+		do {
+			auto nextColon = path.find(':', currentSearchPos);
+			auto entry = path.substr(currentSearchPos, nextColon);
+
+			if (!entry.empty()) {
+				auto targetExecutable = entry + "/" + name;
+				if (Platform::fileExists(targetExecutable.c_str())) {
+					return std::make_optional(std::move(targetExecutable));
+				}
+			}
+
+			if (nextColon != std::string::npos) {
+				currentSearchPos = nextColon + 1;
+			} else {
+				break;
+			}
+		} while (true);
+
+		return std::nullopt;
+	}
+
 	struct MemMapUserData {
 		int fd;
 		size_t mappedSize;
@@ -107,52 +133,132 @@ namespace MathAnim {
 
 		// Adapted from https://stackoverflow.com/questions/2467429/c-check-installed-programms
 		bool isProgramInstalled(const char *displayName) {
-			g_logger_warning("UNIMPLEMENTED: Failing check if %s is installed", displayName);
-			// TODO: Placeholder, but also this function seems unused?
-			return false;
+			auto executable = findExecutable(displayName);
+			return executable.has_value();
 		}
 
 		bool getProgramInstallDir(const char *programDisplayName, char *buffer, size_t bufferLength) {
-			// TODO: I'm used to Rust or managed languages and string handling in C/++ scares me
-
-			std::string const path = std::getenv("PATH");
-			char const delim = ':';
-
-			auto start = 0U;
-			auto end = path.find(delim);
-			while (true) {
-				auto const folder = path.substr(start, end - start);
-
-				int i = 1;
-
-				for (auto const &directory_entry: std::filesystem::directory_iterator(folder)) {
-					auto const file = directory_entry.path();
-					if (strcmp(file.filename().c_str(), programDisplayName) == 0 && access(file.c_str(), X_OK) == 0) {
-						strncpy(buffer, file.parent_path().c_str(), bufferLength - 1);
-						// Append / to the end of the path
-						buffer[strlen(buffer) + 1] = '\0';
-						buffer[strlen(buffer)] = '/';
-						return true;
-					}
-				}
-				if (end == std::string::npos) {
-					break;
-				}
-				start = end + 1;
-				end = path.find(delim, start);
+			auto maybeFoundExecutable = findExecutable(programDisplayName);
+			if (!maybeFoundExecutable) {
+				return false;
 			}
 
-			return false;
+
+			std::string foundExecutable = maybeFoundExecutable.value();
+			std::filesystem::path p(foundExecutable);
+			auto directory = std::string(p.parent_path());
+
+			if (directory.length() > bufferLength - 1) {
+				// Buffer too small
+				return false;
+			}
+
+			strncpy(buffer, directory.c_str(), bufferLength);
+			return true;
 		}
 
 		bool executeProgram(const char *programFilepath, const char *cmdLineArgs, const char *workingDirectory,
 							const char *executionOutputFilename) {
-			g_logger_warning("UNIMPLEMENTED: Trying to execute another program");
-			return false;
+			posix_spawnattr_t spawnAttributes;
+			posix_spawnattr_init(&spawnAttributes);
+
+			posix_spawn_file_actions_t fileActions;
+			posix_spawn_file_actions_init(&fileActions);
+
+			// We need to copy the strings because according to the POSIX standard
+			// they can be modified.
+			char *copiedFilePath = static_cast<char *>(g_memory_allocate(strlen(programFilepath) + 1));
+			strcpy(copiedFilePath, programFilepath);
+
+			char *copiedCmdlineArgs = static_cast<char *>(g_memory_allocate(strlen(cmdLineArgs) + 1));
+			strcpy(copiedCmdlineArgs, cmdLineArgs);
+
+			char *argv[] = { copiedFilePath, copiedCmdlineArgs, nullptr };
+			int error = 0;
+
+			if (executionOutputFilename) {
+				error = posix_spawn_file_actions_addopen(
+						&fileActions,
+						STDOUT_FILENO,
+						executionOutputFilename,
+						O_WRONLY | O_TRUNC | O_CREAT,
+						0644
+				);
+
+				if (error) {
+					g_logger_warning("Failed queue setting the output file for execution: %s", strerror(errno));
+				} else {
+					error = posix_spawn_file_actions_adddup2(
+							&fileActions,
+							STDOUT_FILENO,
+							STDERR_FILENO
+					);
+
+					if (error) {
+						g_logger_warning("Failed to queue duplicating the stdout to stderr for execution: %s", strerror(errno));
+					}
+				}
+			}
+
+			error = posix_spawn_file_actions_addclose(&fileActions, 0);
+			if (error) {
+				g_logger_warning("Failed to queue closing the stdin for execution: %s", strerror(errno));
+			}
+
+			if (workingDirectory) {
+				error = posix_spawn_file_actions_addchdir_np(&fileActions, workingDirectory);
+				if (error) {
+					g_logger_warning("Failed to queue changing the working directory for execution: %s", strerror(errno));
+				}
+			}
+
+			pid_t spawnedProcessId;
+			error = posix_spawn(
+					&spawnedProcessId,
+					programFilepath,
+					&fileActions,
+					&spawnAttributes,
+					argv,
+					environ
+			);
+
+			g_memory_free(copiedCmdlineArgs);
+			g_memory_free(copiedFilePath);
+
+			posix_spawn_file_actions_destroy(&fileActions);
+			posix_spawnattr_destroy(&spawnAttributes);
+
+			if (error) {
+				g_logger_error("Failed to spawn program: %s", strerror(errno));
+				return false;
+			}
+
+			g_logger_info("Spawned program %s with pid %d.", programFilepath, spawnedProcessId);
+
+			int extendedExitStatus;
+			if (waitpid(spawnedProcessId, &extendedExitStatus, 0) == -1) {
+				g_logger_error("Failed to wait for child process: %s", strerror(errno));
+				return false;
+			}
+
+			if (WIFSIGNALED(extendedExitStatus)) {
+				int terminationSignal = WTERMSIG(extendedExitStatus);
+				g_logger_warning("Child process was terminated by signal %s", terminationSignal);
+			} else {
+				g_logger_info("Child exited with code %d", WEXITSTATUS(extendedExitStatus));
+			}
+
+			return true;
 		}
 
 		bool openFileWithDefaultProgram(const char *filepath) {
-			return executeProgram("code", filepath);
+			auto xdgOpen = findExecutable("xdg-open");
+			if (!xdgOpen) {
+				g_logger_warning("Unable to open %s, xdg-open was not found!", filepath);
+				return false;
+			}
+
+			return executeProgram(xdgOpen->c_str(), filepath);
 		}
 
 		bool openFileWithVsCode(const char *filepath, int lineNumber) {
