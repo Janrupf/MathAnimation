@@ -154,7 +154,7 @@ namespace MathAnim
 
 		// start the thread to receive frames from the encoder
 		output->ivfFileWriteThread = std::thread(ivfEncodeThread, p);
-		output->thread = std::thread(&VideoEncoder::encodeThreadLoop, output);
+		output->thread = std::thread([=] { output->encodeThreadLoop(); });
 
 		return output;
 	}

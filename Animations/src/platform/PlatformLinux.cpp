@@ -16,6 +16,7 @@ extern "C" {
 #include <spawn.h>
 
 #include <openssl/evp.h>
+#include <fontconfig/fontconfig.h>
 }
 
 #ifdef min
@@ -117,14 +118,33 @@ namespace MathAnim {
 	};
 
 	namespace Platform {
-		static std::vector<std::string> availableFonts = {
-				"JetBrains Mono"};
+		static std::vector<std::string> availableFonts;
 		static bool availableFontsCached = false;
 		static std::string homeDirectory = std::string();
 
 		const std::vector<std::string> &getAvailableFonts() {
 			if (!availableFontsCached) {
-				// TODO: Placeholder cuz it's 01:39
+				FcConfig *fontConfig = FcInitLoadConfigAndFonts();
+
+				FcPattern *pattern = FcPatternCreate();
+				FcObjectSet *objectSet = FcObjectSetBuild(FC_FILE, nullptr);
+				FcFontSet *fontSet = FcFontList(fontConfig, pattern, objectSet);
+
+				g_logger_info("Found %d available fonts, caching!", fontSet->nfont);
+
+				for (size_t i = 0; i < fontSet->nfont; i++) {
+					FcPattern *font = fontSet->fonts[i];
+
+					FcChar8 *fontFile;
+					FcPatternGetString(font, FC_FILE, 0, &fontFile);
+
+					availableFonts.emplace_back(reinterpret_cast<char *>(fontFile));
+				}
+
+				FcFontSetDestroy(fontSet);
+				FcPatternDestroy(pattern);
+				FcConfigDestroy(fontConfig);
+
 				availableFontsCached = true;
 			}
 

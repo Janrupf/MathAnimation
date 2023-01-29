@@ -85,7 +85,9 @@ target_link_libraries(MathAnimations PUBLIC
 
 if(MATH_ANIMATION_OS_LINUX)
     find_package(OpenSSL REQUIRED)
-    target_link_libraries(MathAnimations PUBLIC OpenSSL::Crypto)
+    find_package(Fontconfig REQUIRED)
+
+    target_link_libraries(MathAnimations PUBLIC OpenSSL::Crypto Fontconfig::Fontconfig)
 endif()
 
 # Asset processing
