@@ -35,9 +35,14 @@ namespace MathAnim
 			ImGuiIO& io = ImGui::GetIO();
 			io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable Keyboard Controls
 			io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;           // Enable Docking
+
+#if defined(_WIN32)
+			// TODO: This is glitchy as hell on Linux (worse than windows),
+			//		 so it is disabled for now
 			io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;         // Enable Multi-Viewport / Platform Windows
+#endif
 			io.ConfigWindowsMoveFromTitleBarOnly = true;
-            
+
             // NOTE(voxel): This looks right for my machine (May have to go back and forth on the value 128.f
 			glm::ivec2 monitor_size = Window::getMonitorWorkingSize();
             float fontSize = monitor_size.x / (128.f + 16.0f);
